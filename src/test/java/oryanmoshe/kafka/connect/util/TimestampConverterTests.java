@@ -69,6 +69,7 @@ public class TimestampConverterTests {
 
     @ParameterizedTest
     @CsvSource(value = {
+            "smalldatetime | yyyy-MM-dd HH:mm:ss | 3453287400000 | 2079-06-06 14:30:00",
             "timestamp | yyyy-MM-dd HH:mm:ss | TO_TIMESTAMP('2000-12-31 13:27:18.') | 2000-12-31 13:27:18",
             "timestamp | yyyy-MM-dd | TO_TIMESTAMP('2000-12-31 13:27:18') | 2000-12-31",
             "date || TO_DATE('2021-12-31 13:27:18', 'YYYY-MM-DD HH24:MI:SS') | 2021-12-31",
@@ -136,10 +137,16 @@ public class TimestampConverterTests {
         Properties props = new Properties();
         if (format != null)
         {
-            props.put(
-                    String.format("format.%s",
-                            columnType.equals("timestamp") || columnType.equals("datetime2") ? "datetime" : columnType),
-                    format);
+            String formatType;
+            switch (columnType) {
+                case "timestamp":
+                case "datetime2":
+                case "smalldatetime":
+                    formatType = "datetime"; break;
+                default:
+                    formatType = columnType;
+            }
+            props.put(String.format("format.%s", formatType), format);
         }
 
         props.put("debug", "true");
@@ -170,6 +177,8 @@ public class TimestampConverterTests {
                 return getTimeColumn();
             case "datetime":
                 return getDateTimeColumn();
+            case "smalldatetime":
+                return getSmallDateTimeColumn();
             case "datetime2":
                 return getDateTime2Column();
             case "timestamp":
@@ -350,6 +359,66 @@ public class TimestampConverterTests {
             @Override
             public boolean hasDefaultValue() {
                 return true;
+            }
+
+            @Override
+            public Object defaultValue() {
+                return null;
+            }
+        };
+    }
+
+    RelationalColumn getSmallDateTimeColumn() {
+        return new RelationalColumn() {
+
+            @Override
+            public String typeName() {
+                return "smalldatetime";
+            }
+
+            @Override
+            public String name() {
+                return "smalldatetimecolumn";
+            }
+
+            @Override
+            public String dataCollection() {
+                return null;
+            }
+
+            @Override
+            public String typeExpression() {
+                return null;
+            }
+
+            @Override
+            public OptionalInt scale() {
+                return null;
+            }
+
+            @Override
+            public int nativeType() {
+                return 0;
+            }
+
+            @Override
+            public OptionalInt length() {
+                return null;
+            }
+
+            @Override
+            public int jdbcType() {
+                return 0;
+            }
+
+            @Override
+            public boolean isOptional() {
+                return false;
+            }
+
+            @Override
+            public boolean hasDefaultValue() {
+                return false;
             }
 
             @Override

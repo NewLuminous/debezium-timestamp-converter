@@ -34,7 +34,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
     public static final String DEFAULT_TIME_FORMAT = "HH:mm:ss.SSS";
 
     public static final List<String> SUPPORTED_DATA_TYPES = List.of("date", "time", "datetime", "timestamp",
-            "datetime2");
+            "datetime2", "smalldatetime");
 
     // Building the formats array
     public static DateTimeFormatter[] FORMATS = new DateTimeFormatter[5];
