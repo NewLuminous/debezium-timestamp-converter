@@ -69,6 +69,9 @@ public class TimestampConverterTests {
 
     @ParameterizedTest
     @CsvSource(value = {
+            "timestamp | yyyy-MM-dd HH:mm:ss | TO_TIMESTAMP('2000-12-31 13:27:18.') | 2000-12-31 13:27:18",
+            "timestamp | yyyy-MM-dd | TO_TIMESTAMP('2000-12-31 13:27:18') | 2000-12-31",
+            "date || TO_DATE('2021-12-31 13:27:18', 'YYYY-MM-DD HH24:MI:SS') | 2021-12-31",
             "datetime | yyyy-MM-dd | 1640936125000 | 2021-12-31",
             "datetime | YYYY-MM-dd | 915089725000 | 1999-12-31", // made wrong
             "date| yyyy-MM-dd| 18368| 2020-04-16",

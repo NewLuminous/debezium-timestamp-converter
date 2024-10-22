@@ -77,7 +77,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
     @Override
     public void configure(Properties props) {
         BuildFormatsParsers();
-        
+
         this.strDatetimeFormat = props.getProperty("format.datetime", DEFAULT_DATETIME_FORMAT);
         this.simpleDatetimeFormatter = new SimpleDateFormat(this.strDatetimeFormat);
 
@@ -144,7 +144,9 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
                             " column.isOptional: %s%n", column.name(), column.typeName(), column.hasDefaultValue(),
                     column.defaultValue(), column.isOptional());
         }
-        if (SUPPORTED_DATA_TYPES.stream().anyMatch(s -> s.equalsIgnoreCase(column.typeName()))) {
+
+        String columnNameWithoutWidth = column.typeName().replaceAll("^(.+?)(\\(.+?\\))$", "$1");
+        if (SUPPORTED_DATA_TYPES.stream().anyMatch(s -> s.equalsIgnoreCase(columnNameWithoutWidth))) {
             boolean isTime = "time".equalsIgnoreCase(column.typeName());
             // Use a new SchemaBuilder every time in order to avoid changing "Already set" options
             // in the schema builder between tables.
@@ -278,6 +280,66 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
 
             return null;
         }
+
+        // Oracle fix, oracle stores original function calls to the binlog and we can no longer rely on debezium converter
+        // Migrate code from: https://github.com/debezium/debezium/blob/main/debezium-connector-oracle/src/main/java/io/debezium/connector/oracle/OracleValueConverters.java
+        // >>>
+
+        final Pattern TO_TIMESTAMP = Pattern.compile("TO_TIMESTAMP\\('(.*)'\\)", Pattern.CASE_INSENSITIVE);
+        final Pattern TO_DATE = Pattern.compile("TO_DATE\\('(.*)',[ ]*'(.*)'\\)", Pattern.CASE_INSENSITIVE);
+
+        final DateTimeFormatter TIMESTAMP_AM_PM_SHORT_FORMATTER = new DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .appendPattern("dd-MMM-yy hh.mm.ss")
+                .optionalStart()
+                .appendPattern(".")
+                .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, false)
+                .optionalEnd()
+                .appendPattern(" a")
+                .toFormatter(Locale.ENGLISH);
+
+        final DateTimeFormatter TIMESTAMP_FORMATTER = new DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .appendPattern("yyyy-MM-dd HH:mm:ss")
+                .optionalStart()
+                .appendPattern(".")
+                .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, false)
+                .optionalEnd()
+                .toFormatter();
+
+        final ZoneId GMT_ZONE_ID = ZoneId.of("GMT");
+        LocalDateTime dateTime;
+
+        final Matcher toTimestampMatcher = TO_TIMESTAMP.matcher(timestamp);
+        if (toTimestampMatcher.matches()) {
+            String dateText = toTimestampMatcher.group(1);
+
+            System.out.printf("[TimestampConverter.getMillis] Matched TO_TIMESTAMP: %s%n", dateText);
+
+            if (dateText.indexOf(" AM") > 0 || dateText.indexOf(" PM") > 0) {
+                dateTime = LocalDateTime.from(TIMESTAMP_AM_PM_SHORT_FORMATTER.parse(dateText.trim()));
+            }
+            else {
+                dateTime = LocalDateTime.from(TIMESTAMP_FORMATTER.parse(dateText.trim()));
+            }
+            return dateTime.atZone(GMT_ZONE_ID).toInstant().toEpochMilli();
+        }
+
+        final Matcher toDateMatcher = TO_DATE.matcher(timestamp);
+        if (toDateMatcher.matches()) {
+            dateTime = LocalDateTime.from(TIMESTAMP_FORMATTER.parse(toDateMatcher.group(1)));
+
+            System.out.printf("[TimestampConverter.getMillis] Matched TO_DATE: %s -> %s -> %s -> %s%n",
+                    dateTime, toDateMatcher.group(1),
+                    TIMESTAMP_FORMATTER.parse(toDateMatcher.group(1)),
+                    dateTime.atZone(GMT_ZONE_ID).toInstant().toEpochMilli());
+
+            return dateTime.atZone(GMT_ZONE_ID).toInstant().toEpochMilli();
+        }
+
+        System.out.printf("[TimestampConverter.getMillis] Not Oracle format: %s%n", timestamp);
+
+        // <<<
 
         if (timestamp.contains(":") || timestamp.contains("-")) {
             return milliFromDateString(timestamp);
