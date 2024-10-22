@@ -26,10 +26,11 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
             Map.entry("jul", "07"), Map.entry("aug", "08"), Map.entry("sep", "09"),
             Map.entry("oct", "10"),
             Map.entry("nov", "11"), Map.entry("dec", "12"));
+    public static final int MILLIS_LENGTH = 13;
 
     // Columns of type "date" and "time" have special formats. The rest are using the datetime format
     public static final String DEFAULT_DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
-    public static final String DEFAULT_DATE_FORMAT = "YYYY-MM-dd";
+    public static final String DEFAULT_DATE_FORMAT = "yyyy-MM-dd";
     public static final String DEFAULT_TIME_FORMAT = "HH:mm:ss.SSS";
 
     public static final List<String> SUPPORTED_DATA_TYPES = List.of("date", "time", "datetime", "timestamp",
@@ -88,6 +89,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
 
         this.debug = props.getProperty("debug", "false").equals("true");
 
+        this.simpleDateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         this.simpleDatetimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         this.simpleTimeFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
 
@@ -166,7 +168,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
                 if (this.debug)
                 {
                     System.out.printf(
-                            "[TimestampConverter.converterFor] Before converting. rawValue: %s, isTime: %s",
+                            "[TimestampConverter.converterFor] Before converting. rawValue: %s, isTime: %s%n",
                             stringValue, isTime);
                 }
 
@@ -176,10 +178,10 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
                 }
                 catch (Exception e){
                     System.out.printf(
-                            "[TimestampConverter.converterFor] ERROR! Using regex for conversion. rawValue: %s, " +
-                                    "isTime: %s", stringValue, isTime);
+                            "[TimestampConverter.converterFor] WARNING! Using regex for conversion. rawValue: %s, " +
+                                    "isTime: %s%n", stringValue, isTime);
                     // Using the legacy regex
-                    long millis = milliFromDateString(stringValue);
+                    Long millis = getMillis(stringValue, column.typeName().toLowerCase());
                     result = convertMillisToDateTimeString(column, stringValue, millis);
                 }
                 return result;
@@ -227,7 +229,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
             }
         }
         if (result == null) {
-            throw new Exception(String.format("Failed to parsed value: {}", rawValue));
+            throw new Exception(String.format("Failed to parsed value: %s", rawValue));
         }
 
         SimpleDateFormat formatter = getFormatterPerColumnType(column);
@@ -235,7 +237,7 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
         output = target_format.format(result);
 
         if (this.debug)
-            System.out.printf("[TimestampConverter.GetDateTimeFormat] Final datetime string: %s", output);
+            System.out.printf("[TimestampConverter.GetDateTimeFormat] Final datetime string: %s%n", output);
         return output;
     }
 
@@ -270,7 +272,48 @@ public class TimestampConverter implements CustomConverter<SchemaBuilder, Relati
     }
 
     // LEGACY METHOD
+    private Long getMillis(String timestamp, String columnType) {
+        if (timestamp.isBlank()) {
+            System.out.printf("[TimestampConverter.getMillis] Null value: %s%n", timestamp);
+
+            return null;
+        }
+
+        if (timestamp.contains(":") || timestamp.contains("-")) {
+            return milliFromDateString(timestamp);
+        }
+
+        // Native date fix
+        // >>>
+
+        int excessLength = timestamp.length() - MILLIS_LENGTH;
+        long longTimestamp = Long.parseLong(timestamp);
+
+        if (columnType == "time") {
+            System.out.printf("[TimestampConverter.getMillis] Return time directly: %s%n", longTimestamp);
+            return longTimestamp;
+        }
+
+        if (excessLength < -5) {
+            // Debezium-MySQL/PgSQL/SQLServer-Date = Days since epochs
+            System.out.printf("[TimestampConverter.getMillis] Probably day (%s) excessLength = (%s) -> (%s)%n", longTimestamp, excessLength, longTimestamp * 24 * 60 * 60 * 1000);
+            return longTimestamp * 24 * 60 * 60 * 1000;
+        }
+
+        if (excessLength > 0) {
+            System.out.printf("[TimestampConverter.getMillis] Removing excessLength (type: %s) = %s -> %s%n", columnType, longTimestamp, excessLength);
+
+            return longTimestamp / (long) Math.pow(10, excessLength);
+        }
+
+        // <<<
+
+        return longTimestamp;
+    }
+
     private Long milliFromDateString(String timestamp) {
+        System.out.printf("[TimestampConverter.milliFromDateString] Parsing: %s%n", timestamp);
+
         // The regex is only for unknown patterns
         final String DATETIME_REGEX = "(?<datetime>(?<date>(?:(?<year>\\d{4})-(?<month>\\d{1,2})-(?<day>\\d{1,2}))|(?:(?<day2>\\d{1,2})\\/(?<month2>\\d{1,2})\\/(?<year2>\\d{4}))|(?:(?<day3>\\d{1,2})-(?<month3>\\w{3})-(?<year3>\\d{4})))?(?:\\s?T?(?<time>(?<hour>\\d{1,2}):(?<minute>\\d{1,2}):(?<second>\\d{1,2})\\.?(?<milli>\\d{0,7})?)?))";
         final Pattern regexPattern = Pattern.compile(DATETIME_REGEX);
